@@ -8,7 +8,7 @@ LIBDIR=$(DESTDIR)/$(PREFIX)/lib
 
 -include config.mk
 
-all: js-tests unit_tests src/r2r
+all: r2r-tests unit_tests
 
 src/r2r:
 	$(MAKE) -C src
@@ -19,11 +19,14 @@ bins:
 fuzz/targets:
 	git clone --depth 1 https://github.com/radareorg/radare2-fuzztargets fuzz/targets
 
-R2R=$(shell cd new ; npm bin)/r2r
-
-RUNTEST=cd new && npm install ; $(R2R)
+R2R_JS=$(shell cd new ; npm bin)/r2r
 
 js-tests: bins
+	cd new && npm install ; $(R2R_JS)
+
+RUNTEST=cd new && r2r -L
+
+r2r-tests: bins
 	${RUNTEST}
 
 keystone: bins
