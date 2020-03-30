@@ -8,10 +8,12 @@
 #define RADARE2_CMD_DEFAULT    "radare2"
 #define RASM2_CMD_DEFAULT      "rasm2"
 #define JSON_TEST_FILE_DEFAULT "../bins/elf/crackme0x00b"
+#define TIMEOUT_DEFAULT        30
 
 #define STRV(x) #x
 #define STR(x) STRV(x)
 #define WORKERS_DEFAULT_STR STR(WORKERS_DEFAULT)
+#define TIMEOUT_DEFAULT_STR STR(TIMEOUT_DEFAULT)
 
 typedef struct r2r_state_t {
 	R2RRunConfig run_config;
@@ -41,6 +43,7 @@ static int help(bool verbose) {
 		" -r [radare2] path to radare2 executable (default is "RADARE2_CMD_DEFAULT")\n"
 		" -m [rasm2]   path to rasm2 executable (default is "RASM2_CMD_DEFAULT")\n"
 		" -f [file]    file to use for json tests (default is "JSON_TEST_FILE_DEFAULT")\n"
+		" -t [seconds] timeout per test (default is "TIMEOUT_DEFAULT_STR")\n"
 		"\n"
 		"OS/Arch for archos tests: "R2R_ARCH_OS"\n");
 	}
@@ -53,11 +56,12 @@ int main(int argc, char **argv) {
 	char *radare2_cmd = NULL;
 	char *rasm2_cmd = NULL;
 	char *json_test_file = NULL;
+	ut64 timeout_sec = TIMEOUT_DEFAULT;
 
 	int ret = 0;
 
 	RGetopt opt;
-	r_getopt_init (&opt, argc, (const char **)argv, "hvj:r:m:f:");
+	r_getopt_init (&opt, argc, (const char **)argv, "hvj:r:m:f:t:");
 	int c;
 	while ((c = r_getopt_next (&opt)) != -1) {
 		switch (c) {
@@ -87,6 +91,12 @@ int main(int argc, char **argv) {
 			free (json_test_file);
 			json_test_file = strdup (opt.arg);
 			break;
+		case 't':
+			timeout_sec = strtoull (opt.arg, NULL, 0);
+			if (!timeout_sec) {
+				timeout_sec = UT64_MAX;
+			}
+			break;
 		}
 		default:
 			ret = help (false);
@@ -105,6 +115,7 @@ int main(int argc, char **argv) {
 	state.run_config.r2_cmd = radare2_cmd ? radare2_cmd : RADARE2_CMD_DEFAULT;
 	state.run_config.rasm2_cmd = rasm2_cmd ? rasm2_cmd : RASM2_CMD_DEFAULT;
 	state.run_config.json_test_file = json_test_file ? json_test_file : JSON_TEST_FILE_DEFAULT;
+	state.run_config.timeout_ms = timeout_sec > UT64_MAX / 1000 ? UT64_MAX : timeout_sec * 1000;
 	state.verbose = verbose;
 	state.db = r2r_test_database_new ();
 	if (!state.db) {
@@ -300,7 +311,7 @@ static void print_diff(const char *actual, const char *expected) {
 }
 
 static R2RProcessOutput *print_runner(const char *file, const char *args[], size_t args_size,
-		const char *envvars[], const char *envvals[], size_t env_size) {
+		const char *envvars[], const char *envvals[], size_t env_size, void *user) {
 	size_t i;
 	for (i = 0; i < env_size; i++) {
 		printf ("%s=%s ", envvars[i], envvals[i]);
@@ -321,7 +332,7 @@ static R2RProcessOutput *print_runner(const char *file, const char *args[], size
 static void print_result_diff(R2RRunConfig *config, R2RTestResultInfo *result) {
 	switch (result->test->type) {
 	case R2R_TEST_TYPE_CMD: {
-		r2r_run_cmd_test (config, result->test->cmd_test, print_runner);
+		r2r_run_cmd_test (config, result->test->cmd_test, print_runner, NULL);
 		const char *expect = result->test->cmd_test->expect.value;
 		if (expect && strcmp (result->proc_out->out, expect)) {
 			printf ("-- stdout\n");
